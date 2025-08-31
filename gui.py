@@ -11,7 +11,7 @@ def resource_path(relative_path):
     return os.path.join(base_path, relative_path)
 
 WALLPAPER_PATH = resource_path('resources/wallpaper.png')
-ICON_PATH = resource_path('resources/skull.png')
+ICON_PATH = resource_path('resources/skull.ico')
 THANKYOU_PATH = resource_path('resources/thanks.png')
 
 class DecryptorApp(tk.Tk):
@@ -20,16 +20,18 @@ class DecryptorApp(tk.Tk):
         self.iconphoto(False, tk.PhotoImage(file=ICON_PATH))
         self.configure(bg='black')
         self.title('Wannacry_mini')
-        self.geometry('900x800')
+        # self.geometry('900x800')
+        self.attributes("-fullscreen", True)
+        self.bind("<Escape>", lambda e: self.attributes("-fullscreen", False))
         self.initialize_ui()
 
     def initialize_ui(self):
-        logo_image = Image.open(ICON_PATH).resize((200,200))
+        logo_image = Image.open(ICON_PATH).resize((300,300))
         logo_photo = ImageTk.PhotoImage(logo_image)
         frame = tk.Frame(self, bg='black')
         frame.pack(pady=(20,20))
 
-        logo_label = tk.Label(frame, image=logo_photo, bg='white')
+        logo_label = tk.Label(frame, image=logo_photo, bg='red')
         logo_label.image = logo_photo
         logo_label.pack(side=tk.LEFT, padx=(20,10))
 
@@ -61,7 +63,7 @@ He will try whatever to restore your files.
         key_frame.pack(fill=tk.X, padx=10, pady=(10,5))
         self.key_entry = tk.Entry(key_frame, fg='black', font=('Helvetica', 12), bd=1, relief=tk.FLAT)
         self.key_entry.pack(fill=tk.X, side=tk.LEFT, expand=True, padx=(10, 0), ipady=8)
-        tk.Button(key_frame, text="DECRYPT", bg='#d9534f', fg='white', font=('Helvetica', 12),
+        tk.Button(key_frame, text="DECRYPT", bg="#d10700", fg='white', font=('Helvetica', 12),
                   relief=tk.FLAT).pack(side=tk.RIGHT, padx=(10,0))
 
     def setup_log_frame(self):
