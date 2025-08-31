@@ -40,7 +40,8 @@ Just joking. This is a demo project for educational purposes only.
 However, playing with malicious softwares are nowhere close to scary but they can be very harmful. 
 [ Users are fully acountable for their actions. ] 
 As this is a educational research type-ish project, 
-if you encrypt your files with wannacry_mini, then just contact to this email address "sshhoommoo@gmail.com". 
+if you encrypt your files with wannacry_mini, then just contact to this email address 
+[ "sshhoommoo@gmail.com" ] 
 He will try whatever to restore your files.
 """
         ransome_note_label = tk.Text(frame, bg='black', font=('Helvetica', 12), wrap='word', height=16, width=60, borderwidth=0) 
